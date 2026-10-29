@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>舒尔特方格 · 专注训练</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --canvas:#111315;
+  --surface:#1B1F20;
+  --board:#D8DDD8;
+  --board-active:#F2F4ED;
+  --ink:#111315;
+  --ink-light:#F2F4ED;
+  --ink-muted:#8C9692;
+  --rule:#3A4240;
+  --rule-soft:#59625E;
+  --tile-border:#87918B;
+  --amber:#FFB547;
+  --green:#B8E986;
+  --alert:#E8442E;
+  --ease-lock:cubic-bezier(.2,.8,.2,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--canvas);
+  color:var(--ink-light);
+  font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  font-size:14px;line-height:1.5;
+  min-height:100vh;
+  overflow-x:hidden;
+}
+.num{font-family:"Barlow Condensed","Noto Sans SC",system-ui,sans-serif;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+.accent{font-family:"Barlow Condensed",system-ui,sans-serif;font-size:12px;font-weight:600;letter-spacing:.12em;color:var(--ink-muted);line-height:1}
+.micro{font-family:"Noto Sans SC",system-ui,sans-serif;font-size:12px;font-weight:500;line-height:1.2;color:var(--ink-muted)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+button{font-family:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--amber);outline-offset:3px}
+
+/* ---------- instrument header ---------- */
+.hdr{
+  height:72px;max-width:1440px;margin:0 auto;padding:0 32px;
+  display:flex;align-items:center;justify-content:space-between;gap:24px;
+}
+.hdr-text{display:flex;flex-direction:column;gap:4px;position:relative;padding-bottom:8px}
+.hdr-text h1{font-size:28px;font-weight:700;line-height:1.15;letter-spacing:0}
+.hdr-text::after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:2px;
+  background:linear-gradient(90deg,transparent 0 35%,var(--amber) 35% 100%);
+}
+.hdr-right{display:flex;align-items:center;gap:16px;position:relative}
+.status{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink-light)}
+.status .dot{width:8px;height:8px;background:var(--rule-soft);flex:none}
+.status[data-state="running"] .dot{background:var(--amber)}
+.status[data-state="done"] .dot{background:var(--green)}
+.hdr-tools{display:flex;gap:4px}
+.icon-btn{
+  width:32px;height:32px;display:grid;place-items:center;border:1px solid transparent;
+  color:var(--ink-muted);transition:color .12s linear,border-color .12s linear;
+}
+.icon-btn:hover{color:var(--ink-light);border-color:var(--rule)}
+.icon-btn[aria-expanded="true"]{color:var(--amber);border-color:var(--rule)}
+
+[data-tip]{position:relative}
+[data-tip]::after{
+  content:attr(data-tip);position:absolute;top:calc(100% + 8px);right:0;
+  background:var(--surface);color:var(--ink-light);border:1px solid var(--rule);
+  font-size:12px;font-weight:500;padding:6px 8px;white-space:nowrap;
+  opacity:0;pointer-events:none;transition:opacity .12s linear;z-index:40;
+}
+[data-tip]:hover::after,[data-tip]:focus-visible::after{opacity:1}
+
+.pop{
+  position:absolute;top:calc(100% + 12px);right:0;width:280px;z-index:50;
+  background:var(--surface);border:1px solid var(--rule);padding:16px;
+}
+.pop h2{font-size:13px;font-weight:700;margin-bottom:12px;letter-spacing:0}
+.pop dl{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:baseline}
+.pop dt{font-family:"Barlow Condensed",system-ui,sans-serif;font-size:14px;font-weight:700;color:var(--amber);letter-spacing:.06em}
+.pop dd{font-size:12px;color:var(--ink-muted);line-height:1.4}
+.pop p{font-size:12px;color:var(--ink-muted);line-height:1.6}
+.pop p + p{margin-top:8px}
+
+/* ---------- shell + instrument grid ---------- */
+.shell{
+  max-width:1440px;margin:0 auto;padding:24px 32px 40px;
+  min-height:calc(100vh - 72px);display:flex;flex-direction:column;
+}
+.instrument{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 1px minmax(260px,340px);
+  grid-template-rows:48px 1px minmax(0,1fr);
+  column-gap:32px;flex:1;min-height:0;
+}
+.vrule{grid-column:2;grid-row:1 / -1;background:var(--rule)}
+.hrule{grid-column:1 / -1;grid-row:2;background:var(--rule)}
+
+/* ---------- measurement rail ---------- */
+.rail{grid-row:1;display:flex;align-items:center;gap:12px;height:48px}
+.rail-left{grid-column:1}
+.rail-right{grid-column:3;justify-content:space-between}
+.readout{display:flex;align-items:baseline;gap:10px}
+.readout .k{font-size:12px;font-weight:500;color:var(--ink-muted);letter-spacing:0}
+.readout .v{font-family:"Barlow Condensed",system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:32px;font-weight:700;line-height:.9;color:var(--ink-light)}
+.readout .v.on{color:var(--amber)}
+.timer-lamp{width:6px;height:6px;background:var(--amber);opacity:.45;flex:none}
+.timer-lamp.pulse{animation:lamp 800ms linear infinite}
+@keyframes lamp{0%{opacity:.45}50%{opacity:1}100%{opacity:.45}}
+
+/* ---------- board column (fluid) ---------- */
+.stage-board{
+  grid-column:1;grid-row:3;
+  /* 方格边长 = 视口宽、视口高、栏宽 三者取最小值，随窗口连续缩放 */
+  --bs:min(58vw, calc(100vh - 330px), calc(100dvh - 330px), 100%);
+  min-height:min(620px, calc(100vh - 240px));
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+  padding:16px 0;min-width:0;
+}
+.board{
+  position:relative;width:var(--bs);
+  background:var(--board);border:2px solid var(--ink);padding:2px;
+  container-type:inline-size;
+}
+.board.wrong{border-color:var(--alert)}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:2px}
+@supports (gap:1cqw){
+  .board{padding:.35cqw}
+  .grid{gap:.35cqw}
+}
+.cell{aspect-ratio:1;position:relative;min-width:0}
+.cell.empty{border:1px solid #A9B1AA}
+
+.tile{
+  width:100%;height:100%;aspect-ratio:1;display:grid;place-items:center;
+  border:1px solid var(--tile-border);background:var(--board);color:var(--ink);
+  font-family:"Barlow Condensed",system-ui,sans-serif;font-variant-numeric:tabular-nums;
+  font-size:44px;font-weight:700;line-height:.9;
+  transition:background-color .12s linear,border-color .12s linear,opacity .26s ease-out,transform .12s var(--ease-lock);
+}
+@supports (font-size:1cqw){ .tile{font-size:clamp(20px, 6.6cqw, 72px)} }
+.tile:hover{background:var(--board-active)}
+.tile:focus-visible{outline:2px solid var(--amber);outline-offset:3px;z-index:2}
+.tile.done{opacity:.28;pointer-events:none}
+.tile.wrong{animation:errpulse 420ms var(--ease-lock)}
+@keyframes errpulse{
+  0%{border-color:var(--alert);box-shadow:inset 0 0 0 2px var(--alert);transform:translateX(0)}
+  15%{transform:translateX(-5%)}
+  30%{transform:translateX(5%)}
+  45%{transform:translateX(-4%)}
+  60%{transform:translateX(3%)}
+  70%{border-color:var(--alert);box-shadow:inset 0 0 0 2px var(--alert);transform:translateX(-2%)}
+  100%{border-color:var(--tile-border);box-shadow:inset 0 0 0 0 var(--alert);transform:translateX(0)}
+}
+.tile.lock{background:var(--board-active);border:2px solid var(--amber);animation:lock 120ms var(--ease-lock)}
+@keyframes lock{0%{transform:scale(1)}50%{transform:scale(1.035)}100%{transform:scale(1)}}
+.tile.calib{animation:calib 168ms var(--ease-lock) both}
+@keyframes calib{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+.tile.wave{animation:wave 420ms ease-out both}
+@keyframes wave{
+  0%{opacity:.28;background:var(--board)}
+  38%{opacity:1;background:var(--board-active)}
+  100%{opacity:.28;background:var(--board)}
+}
+
+.plate{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:8px;text-align:center;padding:16px;
+  background:rgba(216,221,216,.82);
+}
+.plate.hide{display:none}
+.plate .pl-title{
+  font-family:"Barlow Condensed","Noto Sans SC",sans-serif;font-size:26px;font-weight:700;
+  color:var(--ink);letter-spacing:.04em;line-height:1;
+}
+.plate .pl-sub{font-size:13px;color:#4A524D;line-height:1.6;max-width:22ch}
+.plate .pl-time{
+  font-family:"Barlow Condensed",system-ui,sans-serif;font-variant-numeric:tabular-nums;
+  font-size:34px;font-weight:700;color:var(--ink);line-height:.9;
+}
+.plate .pl-flag{
+  font-size:12px;font-weight:600;color:var(--ink);background:var(--amber);padding:3px 8px;
+}
+@supports (font-size:1cqw){
+  .plate .pl-title{font-size:clamp(18px, 4.2cqw, 44px)}
+  .plate .pl-sub{font-size:clamp(11px, 1.85cqw, 16px)}
+  .plate .pl-time{font-size:clamp(22px, 5cqw, 54px)}
+  .plate .pl-flag{font-size:clamp(11px, 1.7cqw, 14px)}
+}
+
+.board-foot{width:var(--bs);display:flex;flex-direction:column;gap:8px}
+.board-foot .btn-main{margin-top:8px}
+.foot-row{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.progress{height:3px;background:var(--rule);width:100%}
+.progress span{display:block;height:100%;width:0;background:var(--amber);transition:width .18s linear}
+
+/* ---------- utility rail ---------- */
+.stage-util{
+  grid-column:3;grid-row:3;display:flex;flex-direction:column;gap:24px;padding:16px 0;min-height:0;
+}
+.block-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px}
+.block-head h2{font-size:13px;font-weight:700;letter-spacing:0;color:var(--ink-light)}
+.score{
+  font-family:"Barlow Condensed",system-ui,sans-serif;font-variant-numeric:tabular-nums;
+  font-size:clamp(56px, 5.4vw, 88px);font-weight:700;line-height:.86;color:var(--ink-light);letter-spacing:0;
+}
+.score.done{color:var(--green)}
+.score.rise{animation:rise 480ms ease-out both}
+@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+.score-unit{font-family:"Barlow Condensed",system-ui,sans-serif;font-size:18px;font-weight:600;color:var(--ink-muted);margin-left:6px;letter-spacing:.06em}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.stat{padding:12px 8px;border-left:1px solid var(--rule);min-width:0}
+.stat:first-child{border-left:0;padding-left:0}
+.stat .k{display:block;font-size:12px;font-weight:500;color:var(--ink-muted);margin-bottom:6px}
+.stat .k .mini{display:none}
+.stat .v{font-family:"Barlow Condensed",system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:26px;font-weight:700;line-height:.9;display:inline-block}
+.stat .v.wrong{color:var(--alert);animation:bump 320ms var(--ease-lock)}
+@keyframes bump{from{transform:scale(1.35)}to{transform:scale(1)}}
+.stat .v small{font-size:13px;font-weight:600;color:var(--ink-muted);margin-left:2px}
+
+.record{border-top:1px solid var(--rule);padding-top:16px}
+.best{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.best .mark{width:8px;height:8px;background:var(--rule-soft);flex:none}
+.best.hit .mark{background:var(--amber)}
+.best .k{font-size:12px;font-weight:500;color:var(--ink-muted)}
+.best .v{font-family:"Barlow Condensed",system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:18px;font-weight:700;color:var(--ink-light)}
+.chart-wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.spark{width:72px;height:32px;flex:none}
+.spark .base{stroke:var(--rule);stroke-width:1}
+.spark .line{fill:none;stroke:var(--ink-muted);stroke-width:1.5;stroke-linecap:square;stroke-linejoin:miter}
+.spark .head{fill:var(--amber)}
+
+/* ---------- history list ---------- */
+.hist-toggle{display:flex;align-items:center;gap:6px;padding:2px 0;color:var(--ink-muted);transition:color .12s linear}
+.hist-toggle:hover{color:var(--ink-light)}
+.hist-toggle:hover .micro{color:var(--ink-light)}
+.hist-toggle .chev{transition:transform .16s var(--ease-lock);flex:none}
+.hist-toggle[aria-expanded="true"] .chev{transform:rotate(180deg)}
+.hist-list{
+  list-style:none;margin-top:12px;border-top:1px solid var(--rule);
+  /* 展开后只在本区域内滚动：按剩余视口高度自适应，避免撑高整页 */
+  max-height:max(120px, min(400px, calc(100vh - 620px)));
+  overflow-y:auto;overscroll-behavior:contain;
+  scrollbar-width:thin;scrollbar-color:var(--rule-soft) transparent;
+}
+.hist-list::-webkit-scrollbar{width:6px}
+.hist-list::-webkit-scrollbar-track{background:transparent}
+.hist-list::-webkit-scrollbar-thumb{background:var(--rule-soft)}
+@supports (height:100dvh){
+  .hist-list{max-height:max(120px, min(400px, calc(100dvh - 620px)))}
+}
+.hi-row{display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)}
+.hi-row:last-child{border-bottom:0}
+.hi-i{font-family:"Barlow Condensed",system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;color:var(--ink-muted);letter-spacing:.06em}
+.hi-bar{height:3px;background:var(--rule)}
+.hi-bar i{display:block;height:100%;background:var(--rule-soft)}
+.hi-t{font-family:"Barlow Condensed",system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:15px;font-weight:700;color:var(--ink-light);letter-spacing:.02em;white-space:nowrap}
+.hi-row.best .hi-bar i{background:var(--amber)}
+.hi-row.best .hi-t{color:var(--amber)}
+.hi-empty{font-size:12px;color:var(--ink-muted);padding:10px 0}
+
+.btn-primary{
+  height:44px;padding:0 20px;background:var(--amber);color:var(--ink);
+  font-size:13px;font-weight:700;letter-spacing:.02em;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:background-color .12s linear;width:100%;
+}
+.btn-primary:hover{background:#FFC46B}
+
+/* ---------- responsive ---------- */
+@media (max-width:1024px){
+  .shell{padding:16px 24px 32px}
+  .hdr{padding:0 24px}
+  .instrument{grid-template-columns:minmax(0,1fr) 1px minmax(220px,300px);column-gap:24px}
+  .stage-board{--bs:min(60vw, calc(100vh - 310px), calc(100dvh - 310px), 100%)}
+  .stat .k{font-size:11px}
+}
+@media (max-width:700px){
+  .hdr{padding:0 16px}
+  .hdr-text::after{background:linear-gradient(90deg,var(--amber) 0 60%,transparent 60% 100%)}
+  .shell{padding:12px 16px 32px;min-height:auto}
+  .instrument{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1px auto auto}
+  .vrule{display:none}
+  .hrule{grid-column:1;grid-row:2}
+  .rail-left{grid-column:1;grid-row:1;width:auto}
+  .rail-right{grid-column:1;grid-row:1;justify-content:flex-end;margin-left:auto;width:auto}
+  .stage-board{
+    grid-column:1;grid-row:3;min-height:0;padding:24px 0;
+    --bs:min(88vw, 100%);
+  }
+  .stage-util{grid-column:1;grid-row:4;padding:24px 0 0}
+  .stats{grid-template-columns:repeat(3,1fr)}
+}
+@media (max-width:480px){
+  .hdr{height:60px}
+  .hdr-text h1{font-size:24px}
+  .stage-board{--bs:min(calc(100vw - 32px), 100%)}
+  .readout .v{font-size:26px}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .stat{border-left:1px solid var(--rule);border-top:1px solid var(--rule);padding:12px}
+  .stat:nth-child(odd){border-left:0;padding-left:0}
+  .stat:nth-child(-n+2){border-top:0}
+  .stat .k .full{display:none}
+  .stat .k .mini{display:inline}
+  .pop{width:min(280px,calc(100vw - 32px))}
+}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition-duration:.001ms!important}
+  .tile.done{opacity:.28}
+  .tile.wrong{border-color:var(--alert);box-shadow:inset 0 0 0 2px var(--alert)}
+}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-text">
+    <span class="accent">SCHULTE GRID</span>
+    <h1>舒尔特方格</h1>
+  </div>
+  <div class="hdr-right">
+    <div class="status" id="status" data-state="idle">
+      <span class="dot"></span><span id="statusText">准备开始</span>
+    </div>
+    <div class="hdr-tools">
+      <button class="icon-btn" id="btnKeys" data-tip="显示键盘操作" aria-label="显示键盘操作" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square">
+          <rect x="1.25" y="3.25" width="13.5" height="9.5"/><path d="M4 6h.01M6.5 6h.01M9 6h.01M11.5 6h.01M4 8.5h.01M6.5 8.5h.01M9 8.5h.01M11.5 8.5h.01M5 10.75h6"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="btnRule" data-tip="计时规则" aria-label="计时规则" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square">
+          <circle cx="8" cy="8.5" r="6"/><path d="M8 5v3.5l2.5 1.5M6 1.25h4"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="pop" id="popKeys" hidden>
+      <h2>键盘操作</h2>
+      <dl>
+        <dt>1–25</dt><dd>按顺序选择对应数字，支持两位数连击（如 1 然后 5 选择 15）</dd>
+        <dt>Space</dt><dd>焦点不在按钮上时，开始或重新开始训练</dd>
+        <dt>Enter</dt><dd>确认当前聚焦的格子</dd>
+        <dt>Tab</dt><dd>在按钮、图标与格子之间移动焦点</dd>
+      </dl>
+    </div>
+    <div class="pop" id="popRule" hidden>
+      <h2>计时规则</h2>
+      <p>计时从点击第一个正确数字开始，完成 25 个数字后自动停止。</p>
+      <p>点错不扣时间，只记录一次失误，目标数字保持不变。</p>
+      <p>个人最佳保存在本机浏览器中，训练记录仅显示最近 10 次完成数据。</p>
+    </div>
+  </div>
+</header>
+
+<main class="shell">
+  <section class="instrument">
+    <div class="rail rail-left">
+      <div class="readout">
+        <span class="k">当前目标</span>
+        <span class="v num" id="targetVal">01</span>
+      </div>
+    </div>
+    <div class="vrule"></div>
+    <div class="rail rail-right">
+      <div class="readout">
+        <span class="timer-lamp" id="lamp"></span>
+        <span class="k">用时</span>
+        <span class="v num" id="timeVal">00.00</span>
+      </div>
+    </div>
+    <div class="hrule"></div>
+
+    <div class="stage-board">
+      <div class="board" id="board">
+        <div class="grid" id="grid"></div>
+        <div class="plate" id="plate">
+          <div class="pl-title" id="plateTitle">练习前</div>
+          <div class="pl-sub" id="plateSub">按 1 到 25 的顺序点击数字<br>用时越短，专注表现越好</div>
+          <div class="pl-flag hide" id="plateFlag">新纪录</div>
+        </div>
+      </div>
+      <div class="board-foot">
+        <div class="foot-row">
+          <span class="micro" id="stateLabel">共 25 格</span>
+          <span class="micro" id="progressLabel">00 / 25</span>
+        </div>
+        <div class="progress"><span id="progressBar"></span></div>
+        <button class="btn-primary btn-main" id="btnAction">开始训练</button>
+      </div>
+    </div>
+
+    <aside class="stage-util">
+      <div>
+        <div class="block-head">
+          <h2 id="resultHead">本轮数据</h2>
+          <span class="accent">SESSION</span>
+        </div>
+        <div>
+          <span class="score num" id="scoreVal">--.--</span><span class="score-unit">SEC</span>
+        </div>
+        <div class="micro" style="margin-top:8px">本轮用时</div>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <span class="k"><span class="full">正确</span><span class="mini">次</span></span>
+          <span class="v num" id="stCorrect">00<small>/ 25</small></span>
+        </div>
+        <div class="stat">
+          <span class="k"><span class="full">失误</span><span class="mini">误</span></span>
+          <span class="v num" id="stMiss">00</span>
+        </div>
+        <div class="stat">
+          <span class="k"><span class="full">准确率</span><span class="mini">准</span></span>
+          <span class="v num" id="stAcc">—</span>
+        </div>
+        <div class="stat">
+          <span class="k"><span class="full">训练次数</span><span class="mini">次</span></span>
+          <span class="v num" id="stRounds">00</span>
+        </div>
+      </div>
+
+      <div class="record">
+        <div class="block-head">
+          <h2>训练记录</h2>
+          <span class="accent">LAST 10</span>
+        </div>
+        <div class="best" id="bestBox">
+          <span class="mark"></span>
+          <span class="k">个人最佳</span>
+          <span class="v num" id="bestVal">—</span>
+        </div>
+        <div class="chart-wrap">
+          <button class="hist-toggle" id="histToggle" type="button" aria-expanded="false" aria-controls="histList">
+            <span class="micro" id="chartNote">暂无记录</span>
+            <svg class="chev" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true">
+              <path d="M1.5 3.5 5 7l3.5-3.5"/>
+            </svg>
+          </button>
+          <svg class="spark" id="spark" viewBox="0 0 72 32" aria-hidden="true">
+            <line class="base" x1="0" y1="31" x2="72" y2="31"/>
+            <polyline class="line" id="sparkLine" points=""/>
+            <rect class="head" id="sparkHead" x="-9" y="-9" width="3" height="3"/>
+          </svg>
+        </div>
+        <ul class="hist-list" id="histList" hidden></ul>
+      </div>
+    </aside>
+  </section>
+</main>
+
+<div class="sr" id="announce" aria-live="polite" role="status"></div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var STORE = "schulte-5x5-v1";
+
+  var grid=$("grid"), board=$("board"), plate=$("plate"), plateTitle=$("plateTitle"),
+      plateSub=$("plateSub"), plateFlag=$("plateFlag"), targetVal=$("targetVal"),
+      timeVal=$("timeVal"), lamp=$("lamp"), statusBox=$("status"), statusText=$("statusText"),
+      scoreVal=$("scoreVal"), resultHead=$("resultHead"), stCorrect=$("stCorrect"),
+      stMiss=$("stMiss"), stAcc=$("stAcc"), stRounds=$("stRounds"), bestVal=$("bestVal"),
+      bestBox=$("bestBox"), sparkLine=$("sparkLine"), sparkHead=$("sparkHead"),
+      chartNote=$("chartNote"), stateLabel=$("stateLabel"), progressLabel=$("progressLabel"),
+      progressBar=$("progressBar"), announce=$("announce"),
+      histToggle=$("histToggle"), histList=$("histList"),
+      btnAction=$("btnAction");
+
+  var S = {
+    phase:"empty",
+    set:[],
+    tiles:[],
+    target:1,
+    mistakes:0,
+    startTs:0,
+    elapsed:0,
+    raf:0,
+    rounds:0,
+    history:[],
+    best:null
+  };
+
+  function load(){
+    try{
+      var raw = localStorage.getItem(STORE);
+      if(!raw) return;
+      var d = JSON.parse(raw);
+      if(typeof d.rounds === "number") S.rounds = d.rounds;
+      if(Object.prototype.toString.call(d.history) === "[object Array]") S.history = d.history.slice(-10);
+      if(typeof d.best === "number") S.best = d.best;
+    }catch(e){}
+  }
+  function save(){
+    try{
+      localStorage.setItem(STORE, JSON.stringify({rounds:S.rounds, history:S.history, best:S.best}));
+    }catch(e){}
+  }
+
+  function pad(n,w){ n = String(n); while(n.length<w){ n = "0"+n; } return n; }
+  function railTime(ms){
+    var t = ms/1000;
+    if(t < 100) return pad(t.toFixed(2),5);
+    var m = Math.floor(t/60), s = t - m*60;
+    return m + ":" + pad(s.toFixed(2),5);
+  }
+  function fullTime(ms){
+    var t = ms/1000, m = Math.floor(t/60), s = t - m*60;
+    return pad(m,2) + ":" + pad(s.toFixed(2),5);
+  }
+  function secTime(ms){ return pad((ms/1000).toFixed(2),5); }
+
+  function emptyBoard(){
+    grid.innerHTML = "";
+    for(var i=0;i<25;i++){
+      var c = document.createElement("div");
+      c.className = "cell empty";
+      grid.appendChild(c);
+    }
+  }
+
+  function shuffled(){
+    var a = [], i, j, t;
+    for(i=1;i<=25;i++) a.push(i);
+    for(i=a.length-1;i>0;i--){
+      j = Math.floor(Math.random()*(i+1));
+      t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  function buildTiles(animate){
+    grid.innerHTML = "";
+    S.tiles = [];
+    for(var i=0;i<25;i++){
+      var r = Math.floor(i/5), c = i%5;
+      var level = Math.abs(r-2) + Math.abs(c-2);
+      var wrap = document.createElement("div");
+      wrap.className = "cell";
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "tile" + (animate && !reduce ? " calib" : "");
+      b.textContent = S.set[i];
+      b.setAttribute("aria-label","数字 " + S.set[i]);
+      b.dataset.value = S.set[i];
+      if(animate && !reduce) b.style.animationDelay = (level*28) + "ms";
+      b.addEventListener("click", onPick);
+      wrap.appendChild(b);
+      grid.appendChild(wrap);
+      S.tiles.push(b);
+    }
+  }
+
+  function levelOf(i){ return Math.abs(Math.floor(i/5)-2) + Math.abs((i%5)-2); }
+
+  function setPhase(p){
+    S.phase = p;
+    var map = {
+      empty:["准备开始","idle"],
+      ready:["准备开始","idle"],
+      running:["正在计时","running"],
+      done:["本轮完成","done"]
+    };
+    statusText.textContent = map[p][0];
+    statusBox.setAttribute("data-state", map[p][1]);
+    lamp.className = "timer-lamp" + (p==="running" && !reduce ? " pulse" : "");
+    btnAction.textContent = (p === "running") ? "换一组" : "开始训练";
+  }
+
+  function updateStats(){
+    var done = S.target - 1;
+    stCorrect.innerHTML = pad(done,2) + '<small>/ 25</small>';
+    stMiss.textContent = pad(S.mistakes,2);
+    var total = done + S.mistakes;
+    stAcc.textContent = total ? Math.round(done/total*100) + "%" : "—";
+    stRounds.textContent = pad(S.rounds,2);
+    targetVal.textContent = pad(Math.min(S.target,25),2);
+    progressLabel.textContent = pad(done,2) + " / 25";
+    progressBar.style.width = (done/25*100) + "%";
+  }
+
+  function renderHistList(h){
+    if(!h.length){
+      histList.innerHTML = '<li class="hi-empty">完成一次训练后，这里会显示最近记录</li>';
+      return;
+    }
+    var lo = Math.min.apply(null,h), hi = Math.max.apply(null,h), span = hi - lo;
+    var rev = h.slice().reverse(), out = "", i, v, w;
+    for(i=0;i<rev.length;i++){
+      v = rev[i];
+      w = span > 0 ? (10 + (v - lo)/span*90) : 100;
+      out += '<li class="hi-row' + (v === S.best ? ' best' : '') + '">'
+           + '<span class="hi-i">' + pad(i+1,2) + '</span>'
+           + '<span class="hi-bar"><i style="width:' + w.toFixed(0) + '%"></i></span>'
+           + '<span class="hi-t">' + fullTime(v) + '</span>'
+           + '</li>';
+    }
+    histList.innerHTML = out;
+  }
+
+  function drawRecord(){
+    bestVal.textContent = S.best === null ? "—" : secTime(S.best) + " 秒";
+    var h = S.history;
+    renderHistList(h);
+    if(!h.length){
+      sparkLine.setAttribute("points","");
+      sparkHead.setAttribute("x",-9);
+      chartNote.textContent = "暂无记录";
+      return;
+    }
+    chartNote.textContent = "最近 " + h.length + " 次完成";
+    var min = Math.min.apply(null,h), max = Math.max.apply(null,h);
+    var span = (max - min) || 1, pts = [], i, x, y;
+    for(i=0;i<h.length;i++){
+      x = h.length === 1 ? 36 : (i/(h.length-1))*68 + 2;
+      y = 28 - ((h[i]-min)/span)*24;
+      pts.push(x.toFixed(1)+","+y.toFixed(1));
+    }
+    sparkLine.setAttribute("points", pts.join(" "));
+    var lx = 70, ly = 28 - ((h[h.length-1]-min)/span)*24;
+    sparkHead.setAttribute("x", (lx-1.5).toFixed(1));
+    sparkHead.setAttribute("y", (ly-1.5).toFixed(1));
+  }
+
+  function tick(){
+    S.elapsed = performance.now() - S.startTs;
+    timeVal.textContent = railTime(S.elapsed);
+    S.raf = requestAnimationFrame(tick);
+  }
+  function stopTimer(){
+    if(S.raf) cancelAnimationFrame(S.raf);
+    S.raf = 0;
+  }
+
+  function newSet(animate){
+    S.set = shuffled();
+    S.target = 1;
+    S.mistakes = 0;
+    S.elapsed = 0;
+    stopTimer();
+    buildTiles(animate !== false);
+    plate.classList.add("hide");
+    plateFlag.classList.add("hide");
+    scoreVal.textContent = "00.00";
+    scoreVal.className = "score num";
+    resultHead.textContent = "本轮数据";
+    bestBox.classList.remove("hit");
+    setPhase("ready");
+    timeVal.textContent = "00.00";
+    targetVal.classList.remove("on");
+    stateLabel.textContent = "注视中心";
+    updateStats();
+  }
+
+  function begin(){
+    newSet(true);
+    targetVal.classList.add("on");
+    say("训练开始，目标 01");
+  }
+
+  function onPick(e){
+    if(S.phase !== "ready" && S.phase !== "running") return;
+    var el = e.currentTarget;
+    handlePick(parseInt(el.dataset.value,10), el);
+  }
+
+  function flash(node, cls, ms){
+    if(!node) return;
+    node.classList.remove(cls);
+    void node.offsetWidth;
+    node.classList.add(cls);
+    clearTimeout(node._flashT);
+    node._flashT = setTimeout(function(){ node.classList.remove(cls); }, ms);
+  }
+
+  function handlePick(value, el){
+    if(S.phase !== "ready" && S.phase !== "running") return;
+    if(value === S.target){
+      if(S.phase === "ready"){
+        S.startTs = performance.now();
+        setPhase("running");
+        tick();
+      }
+      if(el){
+        el.classList.add("done","lock");
+        (function(node){ setTimeout(function(){ node.classList.remove("lock"); }, 140); })(el);
+      }
+      S.target++;
+      updateStats();
+      if(S.target > 25){ finish(); }
+      else { say("目标 " + pad(S.target,2)); }
+    } else {
+      S.mistakes++;
+      updateStats();
+      flash(el, "wrong", 420);
+      flash(board, "wrong", 320);
+      flash(stMiss, "wrong", 700);
+      say("需要点击 " + pad(S.target,2));
+    }
+  }
+
+  function finish(){
+    stopTimer();
+    S.elapsed = performance.now() - S.startTs;
+    timeVal.textContent = railTime(S.elapsed);
+    targetVal.textContent = "25";
+    setPhase("done");
+    stateLabel.textContent = "训练完成";
+    targetVal.classList.remove("on");
+
+    S.rounds++;
+    S.history.push(Math.round(S.elapsed));
+    if(S.history.length > 10) S.history = S.history.slice(-10);
+
+    var isBest = (S.best === null) || (S.elapsed < S.best);
+    if(isBest) S.best = Math.round(S.elapsed);
+    save();
+
+    scoreVal.textContent = fullTime(S.elapsed).slice(3);
+    scoreVal.className = "score num done" + (reduce ? "" : " rise");
+    resultHead.textContent = "本轮完成";
+    bestBox.classList.toggle("hit", isBest);
+    plateFlag.classList.toggle("hide", !isBest);
+
+    plateTitle.textContent = "训练完成";
+    plateSub.innerHTML = "本轮用时 " + fullTime(S.elapsed) + "<br>失误 " + pad(S.mistakes,2) + " 次";
+    plate.classList.remove("hide");
+
+    for(var i=0;i<S.tiles.length;i++){
+      (function(node, lv){
+        if(reduce){ node.classList.add("done"); return; }
+        node.classList.remove("done");
+        node.classList.add("wave");
+        node.style.animationDelay = (lv*45) + "ms";
+        setTimeout(function(){ node.classList.add("done"); node.classList.remove("wave"); }, lv*45 + 420);
+      })(S.tiles[i], levelOf(i));
+    }
+
+    updateStats();
+    drawRecord();
+    say("训练完成，用时 " + fullTime(S.elapsed) + (isBest ? "，新纪录" : ""));
+  }
+
+  function say(msg){ announce.textContent = msg; }
+
+  var buf = "", bufTimer = 0;
+  function resolveVal(v){
+    if(v >= 1 && v <= 25){
+      var idx = S.set.indexOf(v);
+      handlePick(v, idx >= 0 ? S.tiles[idx] : null);
+    }
+  }
+  function flushBuf(){
+    if(!buf) return;
+    var v = parseInt(buf,10);
+    buf = "";
+    if(bufTimer){ clearTimeout(bufTimer); bufTimer = 0; }
+    resolveVal(v);
+  }
+  document.addEventListener("keydown", function(e){
+    var t = e.target;
+    var isTile = t && t.classList && t.classList.contains("tile");
+    var inControl = t && t.tagName === "BUTTON" && !isTile;
+
+    if(/^[0-9]$/.test(e.key) && !inControl && !isTile){
+      e.preventDefault();
+      var next = buf + e.key;
+      if(next.length === 2){
+        if(parseInt(next,10) > 25){
+          var prev = buf; buf = e.key;
+          if(prev) resolveVal(parseInt(prev,10));
+        } else {
+          buf = next; flushBuf(); return;
+        }
+      } else if(parseInt(next,10)*10 > 25){
+        buf = next; flushBuf(); return;
+      } else {
+        buf = next;
+      }
+      if(bufTimer) clearTimeout(bufTimer);
+      if(buf){ bufTimer = setTimeout(flushBuf, 700); }
+      return;
+    }
+
+    if(e.code === "Space" && !inControl && !isTile){
+      e.preventDefault();
+      if(S.phase === "running") return;
+      begin();
+    }
+    if(e.key === "Escape"){ closePops(); }
+  });
+
+  var pops = [["btnKeys","popKeys"],["btnRule","popRule"]];
+  function closePops(except){
+    pops.forEach(function(p){
+      if(p[1] === except) return;
+      $(p[1]).hidden = true;
+      $(p[0]).setAttribute("aria-expanded","false");
+    });
+  }
+  pops.forEach(function(p){
+    $(p[0]).addEventListener("click", function(e){
+      e.stopPropagation();
+      var el = $(p[1]), open = el.hidden;
+      closePops(p[1]);
+      el.hidden = !open;
+      $(p[0]).setAttribute("aria-expanded", String(open));
+    });
+  });
+  document.addEventListener("click", function(){ closePops(); });
+  Array.prototype.forEach.call(document.querySelectorAll(".pop"), function(el){
+    el.addEventListener("click", function(e){ e.stopPropagation(); });
+  });
+
+  histToggle.addEventListener("click", function(){
+    var open = histList.hidden;
+    histList.hidden = !open;
+    histToggle.setAttribute("aria-expanded", String(open));
+  });
+
+  btnAction.addEventListener("click", function(){
+    if(S.phase === "running"){
+      newSet(true);
+      say("已换一组数字");
+    } else {
+      begin();
+    }
+  });
+
+  emptyBoard();
+  load();
+  updateStats();
+  drawRecord();
+})();
+</script>
+</body>
+</html>
