@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reaction Time Test</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="navbar">
+  <div class="nav-left">
+    <svg class="nav-bolt" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/>
+    </svg>
+    <span class="nav-title">REACTION TIME</span>
+  </div>
+</nav>
+
+<main id="area" class="screen-start" tabindex="0">
+  <div class="content" data-screen="start">
+    <svg class="bolt-icon start-bolt" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/>
+    </svg>
+    <h1 class="headline">Reaction Time Test</h1>
+    <p class="sub">When the red box turns green, click as quickly as you can.<br>Click anywhere to start.</p>
+  </div>
+
+  <div class="content" data-screen="run" hidden>
+    <div class="dots"><span></span><span></span><span></span></div>
+    <h1 class="headline" id="run-text">Wait for green</h1>
+    <p class="sub" id="run-sub" hidden></p>
+  </div>
+
+  <div class="content" data-screen="result" hidden>
+    <div id="middle-result" class="middle">
+      <div class="clock-icon"></div>
+      <h1 class="headline" id="single-value" aria-live="polite"></h1>
+      <p class="sub">Click to keep going</p>
+    </div>
+    <div id="final-result" class="final" hidden>
+      <svg class="bolt-icon final-bolt" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/>
+      </svg>
+      <p class="final-label">Reaction Time</p>
+      <h1 class="headline final-value" id="final-value" aria-live="polite"></h1>
+      <p class="sub" id="final-sub">Average of 5 attempts</p>
+      <p class="attempt-list" id="attempt-list"></p>
+      <div class="button-row">
+        <button class="btn btn-primary" id="try-again">Try again</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<section class="history" id="history">
+  <div class="history-inner">
+    <div class="history-head">
+      <h2>History</h2>
+      <label class="outlier-toggle">
+        <input type="checkbox" id="outlier-toggle" checked>
+        <span>Exclude outliers (fastest &amp; slowest of each round)</span>
+      </label>
+      <button class="btn btn-danger" id="clear-history">Clear history</button>
+    </div>
+    <p class="outlier-note" id="outlier-note"></p>
+    <table class="history-table" id="history-table">
+      <thead>
+        <tr><th>Date</th><th>Attempts (ms)</th><th>Average</th></tr>
+      </thead>
+      <tbody id="history-body"></tbody>
+    </table>
+    <p class="empty" id="history-empty">No tests recorded yet.</p>
+  </div>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>
