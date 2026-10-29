@@ -1,0 +1,10 @@
+*.png
+
+.idea
+.claude
+.vscode
+.gradle
+
+.DS_Store
+
+node_modules/
