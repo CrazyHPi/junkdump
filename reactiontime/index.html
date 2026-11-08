@@ -26,7 +26,13 @@
   </div>
 
   <div class="content" data-screen="run" hidden>
-    <div class="dots"><span></span><span></span><span></span></div>
+    <div class="dots" id="run-dots"><span></span><span></span><span></span></div>
+    <div class="warn-icon" id="warn-icon" aria-hidden="true" hidden>
+      <svg viewBox="0 0 10 26" fill="none">
+        <path d="M5 2.6v13.4" stroke="currentColor" stroke-width="3.8" stroke-linecap="round"/>
+        <circle cx="5" cy="22" r="2.6" fill="currentColor"/>
+      </svg>
+    </div>
     <h1 class="headline" id="run-text">Wait for green</h1>
     <p class="sub" id="run-sub" hidden></p>
   </div>
@@ -58,7 +64,7 @@
       <h2>History</h2>
       <label class="outlier-toggle">
         <input type="checkbox" id="outlier-toggle" checked>
-        <span>Exclude outliers (fastest &amp; slowest of each round)</span>
+        <span>Exclude outliers (attempts over 150&nbsp;ms from the round baseline)</span>
       </label>
       <button class="btn btn-danger" id="clear-history">Clear history</button>
     </div>

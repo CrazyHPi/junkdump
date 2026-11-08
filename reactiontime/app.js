@@ -1,14 +1,20 @@
 "use strict";
 
 const ROUNDS_PER_TEST = 5;
+// An attempt counts as an outlier when it sits further than this from the
+// round's baseline. 150 ms is roughly the spread of ordinary human
+// trial-to-trial noise; anything wider is a distraction, not a reaction.
+const OUTLIER_THRESHOLD_MS = 150;
 const MAX_HISTORY = 200;
 const STORAGE_KEY = "reactionTimeHistory";
 const PREF_KEY = "reactionTimeOutlierPref";
-const SCREEN_CLASSES = ["screen-start", "screen-wait", "screen-go", "screen-result"];
+const SCREEN_CLASSES = ["screen-start", "screen-wait", "screen-go", "screen-result", "screen-early"];
 
 const area = document.getElementById("area");
 const runText = document.getElementById("run-text");
 const runSub = document.getElementById("run-sub");
+const runDots = document.getElementById("run-dots");
+const warnIcon = document.getElementById("warn-icon");
 const singleValue = document.getElementById("single-value");
 const finalValue = document.getElementById("final-value");
 const finalSub = document.getElementById("final-sub");
@@ -47,17 +53,46 @@ function avg(arr) {
 
 function round(v) { return Math.round(v); }
 
+function median(sorted) {
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 // Single source of truth for the displayed average. The result screen and the
 // history table both go through here, so they can never disagree.
+//
+// Outlier rule: measure every attempt against a baseline and drop the ones more
+// than OUTLIER_THRESHOLD_MS away from it.
+//
+// The baseline is the smaller of mean and median. A mean is dragged upward by
+// the very slow taps we want to catch, so letting it define "normal" would make
+// each slow tap harder to notice. The median barely moves, so in practice the
+// median wins; the min() only matters on a left-skewed round (one absurdly fast
+// tap), where the mean is the honest baseline instead.
 function computeStats(list, excludeOutliers) {
   const n = list.length;
-  if (n === 0) return { value: 0, excluded: false, used: 0, total: 0 };
-  if (!excludeOutliers || n < 3) {
-    return { value: avg(list), excluded: false, used: n, total: n };
+  if (n === 0) return { value: 0, excluded: false, used: 0, total: 0, removed: 0 };
+  if (!excludeOutliers) {
+    return { value: avg(list), excluded: false, used: n, total: n, removed: 0 };
   }
   const sorted = list.slice().sort(function (a, b) { return a - b; });
-  const kept = sorted.slice(1, -1);
-  return { value: avg(kept), excluded: true, used: kept.length, total: n };
+  const baseline = Math.min(avg(list), median(sorted));
+  const kept = sorted.filter(function (v) {
+    return Math.abs(v - baseline) <= OUTLIER_THRESHOLD_MS;
+  });
+  // A round so scattered that nothing falls within the threshold has no
+  // baseline worth trusting. Report the plain average rather than ship an
+  // "average" of an arbitrary single attempt.
+  if (!kept.length) {
+    return { value: avg(list), excluded: false, used: n, total: n, removed: 0 };
+  }
+  return {
+    value: avg(kept),
+    excluded: kept.length < n,
+    used: kept.length,
+    total: n,
+    removed: n - kept.length
+  };
 }
 
 /* ---------- dom helpers ---------- */
@@ -110,6 +145,8 @@ function beginWait() {
   phase = "wait";
   setScreen("wait");
   showOnly(runScreen);
+  show(runDots);
+  hide(warnIcon);
   runText.textContent = "Wait for green";
   hide(runSub);
 
@@ -137,13 +174,18 @@ function turnGreen() {
 
 function showTooEarly() {
   cancelPending();
-  phase = "wait";
-  setScreen("wait");
+  // Deliberately no timer here: the next round starts on the user's click (see
+  // the "early" branch in handleTrigger). Auto-advancing spent the next round's
+  // delay while the message was still being read, so green could land before
+  // the user had settled and the round was lost for nothing.
+  phase = "early";
+  setScreen("early");
   showOnly(runScreen);
-  runText.textContent = "Too early! Try again.";
+  hide(runDots);
+  show(warnIcon);
+  runText.textContent = "Too soon!";
   show(runSub);
-  runSub.textContent = "Wait for green\u2026";
-  waitTimer = setTimeout(beginWait, 1500);
+  runSub.textContent = "Click to try again.";
 }
 
 function handleTrigger() {
@@ -151,6 +193,10 @@ function handleTrigger() {
     beginWait();
   } else if (phase === "wait") {
     showTooEarly();
+  } else if (phase === "early") {
+    // The click that acknowledges the message is the same gesture that starts
+    // the next round, so there is nothing extra to aim at.
+    beginWait();
   } else if (phase === "go") {
     const ms = round(performance.now() - goTime);
     attempts.push(ms);
@@ -206,8 +252,9 @@ function renderFinalDisplay() {
   finalValue.textContent = round(stats.value) + "ms";
   attemptList.textContent = "Attempts: " + lastResult.join(" ms, ") + " ms";
   finalSub.textContent = stats.excluded
-    ? "Average of " + stats.used + " of " + stats.total + " attempts (outliers excluded)"
-    : "Average of " + ROUNDS_PER_TEST + " attempts";
+    ? "Average of " + stats.used + " of " + stats.total + " attempts (" + stats.removed +
+      " outlier" + (stats.removed === 1 ? "" : "s") + " beyond " + OUTLIER_THRESHOLD_MS + " ms dropped)"
+    : "Average of " + stats.total + " attempts";
 }
 
 /* ---------- persistence ---------- */
@@ -282,12 +329,16 @@ function renderHistory() {
   historyEmpty.hidden = true;
 
   const rows = history.slice().reverse();
-  let excludedCount = 0;
+  let affectedRounds = 0;
+  let removedTotal = 0;
 
   for (let i = 0; i < rows.length; i++) {
     const record = rows[i];
     const stats = computeStats(record.attempts, excludeOutliers);
-    if (stats.excluded) excludedCount++;
+    if (stats.excluded) {
+      affectedRounds++;
+      removedTotal += stats.removed;
+    }
 
     const tr = document.createElement("tr");
 
@@ -306,8 +357,11 @@ function renderHistory() {
     historyBody.appendChild(tr);
   }
 
-  outlierNote.textContent = excludeOutliers && excludedCount
-    ? "Outlier exclusion applied to " + excludedCount + " round(s): fastest and slowest attempts removed before averaging."
+  outlierNote.textContent = excludeOutliers && removedTotal
+    ? "Outlier rule: dropped " + removedTotal + " attempt" + (removedTotal === 1 ? "" : "s") +
+      " across " + affectedRounds + " round" + (affectedRounds === 1 ? "" : "s") +
+      " — any attempt more than " + OUTLIER_THRESHOLD_MS +
+      " ms from its round's baseline (the smaller of mean and median)."
     : "";
 }
 
