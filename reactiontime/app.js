@@ -150,7 +150,7 @@ function beginWait() {
   runText.textContent = "Wait for green";
   hide(runSub);
 
-  const delay = 1500 + Math.random() * 3000;
+  const delay = 2500 + Math.random() * 3000;
   waitTimer = setTimeout(turnGreen, delay);
 }
 

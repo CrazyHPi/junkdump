@@ -39,12 +39,12 @@ body {
   -webkit-tap-highlight-color: transparent;
   outline: none;
 }
-.screen-start, .screen-result { background: #2b7cd3; }
-.screen-wait { background: #d32f3a; }
-.screen-go { background: #3ddc68; }
+.screen-start, .screen-result { background: #2b87d1; }
+.screen-wait { background: #ce2636; }
+.screen-go { background: #4bdb6a; }
 /* Too-soon feedback shares the blue of the resting screens: it must not read as
    "still waiting" (red) nor as "green is up" (green). */
-.screen-early { background: #2b7cd3; }
+.screen-early { background: #2b87d1; }
 
 .content { display: flex; flex-direction: column; align-items: center; gap: 18px; }
 .middle, .final { display: flex; flex-direction: column; align-items: center; gap: 14px; }
@@ -60,7 +60,7 @@ body {
   background: #fff; position: relative;
 }
 .clock-icon::before, .clock-icon::after {
-  content: ""; position: absolute; background: #2b7cd3;
+  content: ""; position: absolute; background: #2b87d1;
   left: 50%; top: 50%; transform-origin: top left; border-radius: 2px;
 }
 .clock-icon::before { width: 5px; height: 26px; transform: translate(-50%,0); }
@@ -74,7 +74,7 @@ body {
    below it. */
 .warn-icon {
   width: 80px; height: 80px; border-radius: 50%;
-  background: #fff; color: #2b7cd3;
+  background: #fff; color: #2b87d1;
   display: flex; align-items: center; justify-content: center;
 }
 .warn-icon svg { width: 48px; height: 48px; }
@@ -123,7 +123,7 @@ body {
   border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 .history-table th, .history-table td { padding: 12px 16px; text-align: left; font-size: 15px; }
-.history-table th { background: #2b7cd3; color: #fff; font-weight: 600; }
+.history-table th { background: #2b87d1; color: #fff; font-weight: 600; }
 .history-table tbody tr:nth-child(even) { background: #f2f6fa; }
 .history-table tbody tr:nth-child(odd) { background: #fff; }
 
