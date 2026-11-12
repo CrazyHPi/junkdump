@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         抖音直播间净化器（可视化开关版）
 // @namespace    http://tampermonkey.net/
-// @version      3.2
+// @version      3.4
 // @author       CrazyH & dsv4
-// @description  半透明毛玻璃面板，支持折叠/展开、拖拽移动，独立控制顶部、底部、礼物特效。
+// @description  半透明毛玻璃面板，支持折叠/展开、拖拽移动，独立控制顶部、底部、礼物特效，并自动切换最高清晰度、屏蔽送礼信息与福袋口令。
 // @match        https://live.douyin.com/*
 // @match        https://www.douyin.com/*
 // @grant        GM_addStyle
@@ -21,6 +21,9 @@
         HIDE_TOP: 'douyin_clean_hide_top',
         HIDE_BOTTOM: 'douyin_clean_hide_bottom',
         HIDE_GIFT_EFFECT: 'douyin_clean_hide_gift_effect',
+        AUTO_HD: 'douyin_clean_auto_hd',
+        BLOCK_GIFT_MSG: 'douyin_clean_block_gift_msg',
+        BLOCK_FUDAI: 'douyin_clean_block_fudai',
         PANEL_VISIBLE: 'douyin_clean_panel_visible',
         PANEL_COLLAPSED: 'douyin_clean_panel_collapsed',
         PANEL_POSITION: 'douyin_clean_panel_position'
@@ -29,6 +32,9 @@
         [STORAGE_KEYS.HIDE_TOP]: true,
         [STORAGE_KEYS.HIDE_BOTTOM]: true,
         [STORAGE_KEYS.HIDE_GIFT_EFFECT]: true,
+        [STORAGE_KEYS.AUTO_HD]: true,
+        [STORAGE_KEYS.BLOCK_GIFT_MSG]: true,
+        [STORAGE_KEYS.BLOCK_FUDAI]: true,
         [STORAGE_KEYS.PANEL_VISIBLE]: true,
         [STORAGE_KEYS.PANEL_COLLAPSED]: false,
         [STORAGE_KEYS.PANEL_POSITION]: { right: '20px', bottom: '20px' }
@@ -39,7 +45,10 @@
         return {
             hideTop: GM_getValue(STORAGE_KEYS.HIDE_TOP, DEFAULTS[STORAGE_KEYS.HIDE_TOP]),
             hideBottom: GM_getValue(STORAGE_KEYS.HIDE_BOTTOM, DEFAULTS[STORAGE_KEYS.HIDE_BOTTOM]),
-            hideGiftEffect: GM_getValue(STORAGE_KEYS.HIDE_GIFT_EFFECT, DEFAULTS[STORAGE_KEYS.HIDE_GIFT_EFFECT])
+            hideGiftEffect: GM_getValue(STORAGE_KEYS.HIDE_GIFT_EFFECT, DEFAULTS[STORAGE_KEYS.HIDE_GIFT_EFFECT]),
+            autoHd: GM_getValue(STORAGE_KEYS.AUTO_HD, DEFAULTS[STORAGE_KEYS.AUTO_HD]),
+            blockGiftMsg: GM_getValue(STORAGE_KEYS.BLOCK_GIFT_MSG, DEFAULTS[STORAGE_KEYS.BLOCK_GIFT_MSG]),
+            blockFudai: GM_getValue(STORAGE_KEYS.BLOCK_FUDAI, DEFAULTS[STORAGE_KEYS.BLOCK_FUDAI])
         };
     }
 
@@ -54,12 +63,8 @@
 
         // 始终启用的样式：播放器容器 padding 重置（消除黑边/留白）
         const alwaysCss = `
-            /* 消除播放器容器多余 Padding */
+            /* 消除播放器容器多余 Padding（用稳定的 id 前缀，不再依赖构建期哈希类名） */
             div[id^="living_player_container"] {
-                padding: 0 !important;
-                margin: 0 !important;
-            }
-            .luP71X7i, .gZxYAuQb {
                 padding: 0 !important;
                 margin: 0 !important;
             }
@@ -76,12 +81,14 @@
 
         // 底部礼物/充值区域屏蔽
         const bottomCss = hideBottom ? `
-            #BottomLayout {
+            /* 只在确认是礼物栏、且底部容器里没有聊天输入时才整块隐藏，避免误伤其他布局 */
+            #BottomLayout:has([data-e2e="gifts-container"]):not(:has(textarea, [contenteditable="true"], [data-e2e*="chat"])) {
                 display: none !important;
             }
-            #BottomLayout div:has([data-e2e="gifts-container"]),
-            #BottomLayout div:has([data-e2e="recharge-btn"]),
-            #BottomLayout div:has([data-e2e="gifts-switch"]),
+            /* 兜底：无论容器结构如何，礼物/充值相关节点一律隐藏 */
+            [data-e2e="gifts-container"],
+            [data-e2e="recharge-btn"],
+            [data-e2e="gifts-switch"],
             [class*="gitBarOptimizeEnabled"] {
                 display: none !important;
                 height: 0 !important;
@@ -262,41 +269,72 @@
         }
     `);
 
-    // 保存面板位置
+    // 保存面板位置：直接读实际渲染出的 left/top（视口坐标），避免 right/bottom 计算歧义
     function savePanelPosition() {
         if (!panelElement) return;
-        const style = window.getComputedStyle(panelElement);
-        const position = {
-            right: style.right,
-            bottom: style.bottom,
-            left: style.left,
-            top: style.top
-        };
-        if (position.right !== 'auto' && position.bottom !== 'auto') {
-            GM_setValue(STORAGE_KEYS.PANEL_POSITION, { right: position.right, bottom: position.bottom });
-        } else if (position.left !== 'auto' && position.top !== 'auto') {
-            GM_setValue(STORAGE_KEYS.PANEL_POSITION, { left: position.left, top: position.top });
-        }
+        const rect = panelElement.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return; // 面板隐藏时不保存
+        GM_setValue(STORAGE_KEYS.PANEL_POSITION, {
+            left: Math.round(rect.left) + 'px',
+            top: Math.round(rect.top) + 'px'
+        });
     }
 
-    // 恢复面板位置
+    // 把面板位置夹进当前窗口可视区，避免"窗口变形后跑到屏幕外"
+    function clampPanelIntoView(panel) {
+        if (!panel || panel.style.display === 'none') return;
+        const rect = panel.getBoundingClientRect();
+        const w = rect.width || panel.offsetWidth || 186;
+        const h = rect.height || panel.offsetHeight || 160;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const margin = 10;
+        const maxLeft = Math.max(margin, vw - w - margin);
+        const maxTop = Math.max(margin, vh - h - margin);
+        const left = Math.min(Math.max(margin, rect.left), maxLeft);
+        const top = Math.min(Math.max(margin, rect.top), maxTop);
+        panel.style.left = left + 'px';
+        panel.style.top = top + 'px';
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+    }
+
+    // 恢复面板位置（兼容旧版存下的 right/bottom），并强制夹进当前窗口
     function restorePanelPosition(panel) {
         const savedPos = GM_getValue(STORAGE_KEYS.PANEL_POSITION, DEFAULTS[STORAGE_KEYS.PANEL_POSITION]);
-        if (savedPos.right && savedPos.bottom) {
-            panel.style.right = savedPos.right;
-            panel.style.bottom = savedPos.bottom;
-            panel.style.left = 'auto';
-            panel.style.top = 'auto';
-        } else if (savedPos.left && savedPos.top) {
-            panel.style.left = savedPos.left;
-            panel.style.top = savedPos.top;
-            panel.style.right = 'auto';
-            panel.style.bottom = 'auto';
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const w = panel.offsetWidth || 186;
+        const h = panel.offsetHeight || 160;
+        const margin = 10;
+
+        let left, top;
+        if (savedPos && savedPos.left != null && savedPos.top != null) {
+            left = parseFloat(savedPos.left);
+            top = parseFloat(savedPos.top);
+        } else if (savedPos && savedPos.right != null && savedPos.bottom != null) {
+            // 旧版存档是 right/bottom：换算成 left/top
+            left = vw - parseFloat(savedPos.right) - w;
+            top = vh - parseFloat(savedPos.bottom) - h;
         } else {
-            panel.style.right = '20px';
-            panel.style.bottom = '20px';
+            left = vw - 20 - w;
+            top = vh - 20 - h;
         }
+
+        // 关键：夹进当前窗口，修复「只在窗口最大化时才看得到」的问题
+        const maxLeft = Math.max(margin, vw - w - margin);
+        const maxTop = Math.max(margin, vh - h - margin);
+        left = Math.min(Math.max(margin, left), maxLeft);
+        top = Math.min(Math.max(margin, top), maxTop);
+
+        panel.style.left = left + 'px';
+        panel.style.top = top + 'px';
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
     }
+
+    // 窗口尺寸变化时，把面板拉回可视区
+    window.addEventListener('resize', () => clampPanelIntoView(panelElement));
 
     // 拖拽逻辑
     function initDrag(header, panel) {
@@ -384,7 +422,7 @@
 
         const header = document.createElement('div');
         header.className = 'panel-header';
-        header.innerHTML = `<span class="panel-title">🎛️ 直播间净化器</span>
+        header.innerHTML = `<span class="panel-title">直播间净化器</span>
                             <button class="panel-collapse" id="dy-panel-collapse-btn">${isCollapsed ? '+' : '−'}</button>
                             <button class="panel-close" id="dy-panel-close-btn">✕</button>`;
 
@@ -392,23 +430,44 @@
         content.className = 'panel-content';
         content.innerHTML = `
             <div class="switch-item">
-                <span class="switch-label">📡 顶部信息栏</span>
+                <span class="switch-label">顶部信息栏</span>
                 <label class="switch">
                     <input type="checkbox" id="switch-top" ${config.hideTop ? 'checked' : ''}>
                     <span class="slider"></span>
                 </label>
             </div>
             <div class="switch-item">
-                <span class="switch-label">🎁 底部礼物/充值区</span>
+                <span class="switch-label">底部礼物/充值区</span>
                 <label class="switch">
                     <input type="checkbox" id="switch-bottom" ${config.hideBottom ? 'checked' : ''}>
                     <span class="slider"></span>
                 </label>
             </div>
             <div class="switch-item">
-                <span class="switch-label">✨ 礼物飘屏特效</span>
+                <span class="switch-label">礼物飘屏特效</span>
                 <label class="switch">
                     <input type="checkbox" id="switch-effect" ${config.hideGiftEffect ? 'checked' : ''}>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="switch-item">
+                <span class="switch-label">自动最高清晰度</span>
+                <label class="switch">
+                    <input type="checkbox" id="switch-hd" ${config.autoHd ? 'checked' : ''}>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="switch-item">
+                <span class="switch-label">屏蔽送礼信息</span>
+                <label class="switch">
+                    <input type="checkbox" id="switch-giftmsg" ${config.blockGiftMsg ? 'checked' : ''}>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="switch-item">
+                <span class="switch-label">屏蔽福袋口令</span>
+                <label class="switch">
+                    <input type="checkbox" id="switch-fudai" ${config.blockFudai ? 'checked' : ''}>
                     <span class="slider"></span>
                 </label>
             </div>
@@ -444,6 +503,27 @@
             setConfig(STORAGE_KEYS.HIDE_GIFT_EFFECT, newVal);
             applyStyle();
             console.log(`[抖音净化器] 礼物特效 ${newVal ? '已隐藏' : '已显示'}`);
+        });
+
+        const hdSwitch = content.querySelector('#switch-hd');
+        hdSwitch.addEventListener('change', (e) => {
+            setConfig(STORAGE_KEYS.AUTO_HD, e.target.checked);
+            resetLiveEngine();
+            console.log(`[抖音净化器] 自动最高清晰度 ${e.target.checked ? '已开启' : '已关闭'}`);
+        });
+
+        const giftMsgSwitch = content.querySelector('#switch-giftmsg');
+        giftMsgSwitch.addEventListener('change', (e) => {
+            setConfig(STORAGE_KEYS.BLOCK_GIFT_MSG, e.target.checked);
+            resetLiveEngine();
+            console.log(`[抖音净化器] 屏蔽送礼信息 ${e.target.checked ? '已开启' : '已关闭'}`);
+        });
+
+        const fudaiSwitch = content.querySelector('#switch-fudai');
+        fudaiSwitch.addEventListener('change', (e) => {
+            setConfig(STORAGE_KEYS.BLOCK_FUDAI, e.target.checked);
+            resetLiveEngine();
+            console.log(`[抖音净化器] 屏蔽福袋口令 ${e.target.checked ? '已开启' : '已关闭'}`);
         });
 
         const collapseBtn = header.querySelector('#dy-panel-collapse-btn');
@@ -490,28 +570,281 @@
 
     // ========== 油猴菜单命令 ==========
     function registerMenuCommands() {
-        GM_registerMenuCommand('🖥️ 显示/隐藏净化面板', () => {
+        GM_registerMenuCommand('显示/隐藏净化面板', () => {
             togglePanelVisibility();
         });
 
-        GM_registerMenuCommand('📋 查看当前净化状态', () => {
+        GM_registerMenuCommand('查看当前净化状态', () => {
             const cfg = getConfig();
             const status = `当前净化设置：
 - 顶部信息栏：${cfg.hideTop ? '隐藏 ✓' : '显示'}
 - 底部礼物/充值区：${cfg.hideBottom ? '隐藏 ✓' : '显示'}
 - 礼物飘屏特效：${cfg.hideGiftEffect ? '隐藏 ✓' : '显示'}
+- 自动最高清晰度：${cfg.autoHd ? '开启 ✓' : '关闭'}
+- 屏蔽送礼信息：${cfg.blockGiftMsg ? '开启 ✓' : '关闭'}
+- 屏蔽福袋口令：${cfg.blockFudai ? '开启 ✓' : '关闭'}
 ━━━━━━━━━━━━━━
-💡 提示：也可使用页面右下角的半透明面板进行调整`;
+提示：也可使用页面右下角的半透明面板进行调整`;
             alert(status);
         });
     }
 
+    // ========== 直播间增强引擎（自动最高清晰度 / 屏蔽送礼信息 / 屏蔽福袋口令）==========
+    const liveState = {
+        roomKey: null,
+        settingsKey: '',
+        triedQuality: false,
+        triedDanmaku: false,
+        danmakuInFlight: false,
+        timer: null
+    };
+
+    function sleep(ms) {
+        return new Promise((resolve) => window.setTimeout(resolve, ms));
+    }
+
+    function dispatchMouseEvent(el, type, x, y) {
+        if (!el) return;
+        try {
+            el.dispatchEvent(new MouseEvent(type, {
+                view: window, bubbles: true, cancelable: true,
+                clientX: x || 0, clientY: y || 0
+            }));
+        } catch (e) { /* ignore */ }
+    }
+
+    function simulateClick(el) {
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        ['mouseenter', 'mouseover', 'mousemove', 'mousedown', 'mouseup', 'click'].forEach((t) => {
+            dispatchMouseEvent(el, t, x, y);
+        });
+    }
+
+    async function waitForElement(selector, timeoutMs) {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            const el = document.querySelector(selector);
+            if (el) return el;
+            await sleep(100);
+        }
+        return null;
+    }
+
+    function activatePlayer(player) {
+        if (!player) return;
+        player.classList.remove('douyin-player-inactive');
+        player.classList.add('douyin-player-active', 'douyin-player-focus');
+        const rect = player.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        dispatchMouseEvent(document, 'mousemove', x, y);
+        dispatchMouseEvent(player, 'mousemove', x, y);
+    }
+
+    // ---- 自动最高清晰度：悬停清晰度菜单，选择当前可用的最高档 ----
+    async function trySetHighestQuality() {
+        if (liveState.triedQuality) return;
+        if (!getConfig().autoHd) { liveState.triedQuality = true; return; }
+        const plugin = document.querySelector('.QualitySwitchNewPlugin');
+        if (!plugin) return; // 还没渲染好，下次再试
+        activatePlayer(document.querySelector('.F5Mbv3g1'));
+        const pr = plugin.getBoundingClientRect();
+        ['mouseenter', 'mouseover', 'mousemove'].forEach((t) => {
+            dispatchMouseEvent(plugin, t, pr.left + pr.width / 2, pr.top + pr.height / 2);
+        });
+        await sleep(250);
+        const rows = [...plugin.querySelectorAll('.tmNdnn5Q')];
+        if (!rows.length) return;
+        const rowText = (el) => (el.innerText || el.textContent || '').trim();
+        const order = ['原画', '蓝光', '超清', '高清', '标清'];
+        const current = (document.querySelector('[data-e2e="quality"]')?.innerText || '').trim();
+        let target = null;
+        for (const label of order) {
+            const row = rows.find((el) => rowText(el).includes(label));
+            if (!row) continue;
+            if (rowText(row).includes('登录即享')) continue; // 未登录不可选
+            target = { row, label };
+            break;
+        }
+        if (!target) {
+            const row = rows.find((el) => rowText(el).includes('原画'));
+            if (row) target = { row, label: '原画' };
+        }
+        if (!target) return;
+        const rankOf = (text) => {
+            for (let i = 0; i < order.length; i++) {
+                if (text.includes(order[i])) return order.length - i;
+            }
+            return 0; // 智能 / 未知
+        };
+        // 只升不降：已经不低于目标档位就不动（避免误把清晰度调低）
+        if (rankOf(target.label) <= rankOf(current)) { liveState.triedQuality = true; return; }
+        simulateClick(target.row);
+        await sleep(300);
+        liveState.triedQuality = true;
+        console.log('[抖音净化器] 已尝试切换到清晰度：', target.label);
+    }
+
+    // ---- 弹幕设置：关闭“送礼信息” / “福袋口令” ----
+    function isSwitchChecked(el) {
+        if (!el) return false;
+        const attrOwner = el.matches('[aria-checked], [data-state]') ? el : el.querySelector('[aria-checked], [data-state]');
+        const aria = attrOwner?.getAttribute('aria-checked');
+        if (aria === 'true') return true;
+        if (aria === 'false') return false;
+        const state = attrOwner?.getAttribute('data-state');
+        if (state === 'checked' || state === 'on' || state === 'open') return true;
+        if (state === 'unchecked' || state === 'off' || state === 'closed') return false;
+        const input = el.matches('input') ? el : el.querySelector('input[type="checkbox"]');
+        if (input) return input.checked;
+        return el.classList.contains('SpsbqNUm');
+    }
+
+    function findToggleByLabel(panel, labelText) {
+        const normalize = (s) => (s || '').replace(/\s+/g, '');
+        for (const label of panel.querySelectorAll('*')) {
+            if (label.children.length > 0) continue;
+            if (!normalize(label.textContent).includes(labelText)) continue;
+            let row = label.parentElement;
+            while (row && row !== panel) {
+                const toggle = row.querySelector('.dNuSIvAp');
+                if (toggle) return toggle;
+                row = row.parentElement;
+            }
+        }
+        return null;
+    }
+
+    async function setNamedToggle(panel, label, desiredOn) {
+        const toggle = findToggleByLabel(panel, label);
+        if (!toggle) return 'missing';
+        if (isSwitchChecked(toggle) === desiredOn) return 'settled';
+        simulateClick(toggle);
+        for (let i = 0; i < 6; i++) {
+            await sleep(100);
+            if (isSwitchChecked(toggle) === desiredOn) return 'changed';
+        }
+        return 'missing';
+    }
+
+    async function openDanmakuPanel(player) {
+        activatePlayer(player);
+        await sleep(250);
+        const btn = document.querySelector('[data-e2e="danmaku-setting-icon"]');
+        if (!btn) return null;
+        const br = btn.getBoundingClientRect();
+        dispatchMouseEvent(document, 'mousemove', br.left + br.width / 2, br.top + br.height / 2);
+        dispatchMouseEvent(player, 'mousemove', br.left + br.width / 2, br.top + br.height / 2);
+        await sleep(120);
+        simulateClick(btn);
+        let panel = await waitForElement('.UMXOdhRc', 1500);
+        if (!panel) {
+            // 兜底：按文案定位弹幕设置面板
+            panel = [...document.querySelectorAll('div')].find((el) => {
+                const t = el.innerText || '';
+                return t.includes('弹幕设置') && t.includes('恢复默认') && el.querySelector('.dNuSIvAp');
+            }) || null;
+        }
+        if (panel) panel.style.removeProperty('display');
+        return panel;
+    }
+
+    async function applyDanmakuSettings() {
+        if (liveState.triedDanmaku || liveState.danmakuInFlight) return;
+        const cfg = getConfig();
+        if (!cfg.blockGiftMsg && !cfg.blockFudai) { liveState.triedDanmaku = true; return; }
+        const player = document.querySelector('.F5Mbv3g1');
+        if (!player) return; // 播放器还没出来，下次再试
+        liveState.danmakuInFlight = true;
+        try {
+            const panel = await openDanmakuPanel(player);
+            if (!panel) return; // 面板没打开，下次再试
+            try {
+                if (cfg.blockGiftMsg) await setNamedToggle(panel, '送礼信息', false);
+                if (cfg.blockFudai) await setNamedToggle(panel, '福袋口令', false);
+            } finally {
+                await sleep(150);
+                panel.style.display = 'none';
+            }
+            liveState.triedDanmaku = true;
+            console.log('[抖音净化器] 已应用弹幕设置（送礼信息/福袋口令）');
+        } finally {
+            liveState.danmakuInFlight = false;
+        }
+    }
+
+    function syncLiveState() {
+        const cfg = getConfig();
+        const roomKey = location.pathname;
+        const settingsKey = [cfg.autoHd, cfg.blockGiftMsg, cfg.blockFudai].join(':');
+        if (roomKey === liveState.roomKey && settingsKey === liveState.settingsKey) return;
+        liveState.roomKey = roomKey;
+        liveState.settingsKey = settingsKey;
+        liveState.triedQuality = false;
+        liveState.triedDanmaku = false;
+    }
+
+    function liveTick() {
+        syncLiveState();
+        trySetHighestQuality();
+        applyDanmakuSettings();
+    }
+
+    function resetLiveEngine() {
+        liveState.triedQuality = false;
+        liveState.triedDanmaku = false;
+        liveState.settingsKey = '';
+        if (liveState.timer !== null) liveTick();
+    }
+
+    function startLiveEngine() {
+        if (liveState.timer !== null) return;
+        liveState.timer = window.setInterval(liveTick, 2000);
+        window.setTimeout(() => trySetHighestQuality(), 5000);
+        liveTick();
+    }
+
     // ========== 初始化 ==========
+    // 只在真正的直播间里创建面板；首页/普通视频页不显示这块用不上的面板
+    function isLiveRoomPresent() {
+        return !!document.querySelector('div[id^="living_player_container"], #BottomLayout, #chatroom');
+    }
+
+    function whenLiveRoomReady(cb) {
+        if (isLiveRoomPresent()) { cb(); return; }
+        let done = false;
+        const obs = new MutationObserver(() => {
+            if (done) return;
+            if (isLiveRoomPresent()) {
+                done = true;
+                obs.disconnect();
+                cb();
+            }
+        });
+        try {
+            obs.observe(document.documentElement, { childList: true, subtree: true });
+        } catch (e) {
+            // 极端情况下退回定时轮询
+            const timer = setInterval(() => {
+                if (isLiveRoomPresent()) { clearInterval(timer); cb(); }
+            }, 500);
+            return;
+        }
+        // 兜底：长时间没有直播间就停止观察（避免一直空转）
+        setTimeout(() => { if (!done) obs.disconnect(); }, 45000);
+    }
+
     function init() {
         applyStyle();
-        createControlPanel();
         registerMenuCommands();
-        console.log('抖音直播间净化器 v3.2 已启动 — 半透明毛玻璃面板，支持折叠/拖拽');
+        whenLiveRoomReady(() => {
+            createControlPanel();
+            startLiveEngine();
+        });
+        console.log('抖音直播间净化器 v3.4 已启动 — 毛玻璃面板 + 自动清晰度/屏蔽送礼·福袋');
     }
 
     if (document.readyState === 'loading') {
