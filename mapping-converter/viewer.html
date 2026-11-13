@@ -153,7 +153,7 @@
     </div>
   </div>
   <div class="searchrow">
-    <input id="q" placeholder="类名 / 方法名 / 字段名 —— 任意一套命名空间都行，支持部分匹配" spellcheck="false" autocomplete="off">
+    <input id="q" placeholder="类名 / 方法名 / 字段名，支持「类.成员」如 ItemEntity.damage —— 任意命名空间、部分匹配" spellcheck="false" autocomplete="off">
   </div>
   <div class="chips" id="nsChips">
     <span class="chip on" data-ns="all">全部</span>
@@ -198,6 +198,7 @@
   var DATA = null;
   var rows = [];
   var lower = null;
+  var classLower = null;
   var obfToFeather2 = new Map();
   var byObf = new Map();
   var state = {
@@ -268,6 +269,13 @@
       out[i] = lc;
     }
     lower = out;
+    var cls = DATA.classes, cl = new Array(cls.length);
+    for (var c = 0; c < cls.length; c++) {
+      var n = cls[c][0], l = new Array(6);
+      for (var j = 0; j < 6; j++) l[j] = n[j] ? n[j].toLowerCase() : "";
+      cl[c] = l;
+    }
+    classLower = cl;
   }
 
   function scoreName(q, name, lc) {
@@ -282,21 +290,59 @@
   }
 
   function search(q) {
-    var ql = q.toLowerCase().replace(/\./g, "/");
+    var ql = q.trim().toLowerCase();
+    if (!ql) return [];
     var ns = state.ns, kind = state.kind;
-    var out = [];
     var cls = DATA.classes;
+
+    // 支持「类.成员」：最后一个点之前是类名，之后是成员名
+    var ownerQ = null, memQ = null;
+    var dot = ql.lastIndexOf(".");
+    if (dot > 0 && dot < ql.length - 1) {
+      ownerQ = ql.slice(0, dot).replace(/\./g, "/");
+      memQ = ql.slice(dot + 1);
+    }
+    var nameQ = ql.replace(/\./g, "/");
+
+    var out = [];
     for (var ri = 0; ri < rows.length; ri++) {
       var row = rows[ri];
       if (kind !== null && kind !== row.k) continue;
       var names = row.names;
       var best = 0, bestI = 0;
       var lcRow = lower ? lower[ri] : null;
+
+      // (a) 名字匹配：类全名 / 成员名（点号归一化成斜杠）
       for (var i = 0; i < names.length; i++) {
         if (ns !== null && ns.indexOf(SLOT_NS[i]) < 0) continue;
-        var s = scoreName(ql, names[i], lcRow ? lcRow[i] : null);
+        var s = scoreName(nameQ, names[i], lcRow ? lcRow[i] : null);
         if (s > best) { best = s; bestI = i; }
       }
+
+      // (b) 「类.成员」匹配：所属类与成员名都要命中
+      if (ownerQ && row.k !== 0) {
+        var ownerNames = cls[row.ci][0];
+        var cLow = classLower ? classLower[row.ci] : null;
+        var ob = 0;
+        for (var c = 0; c < 6; c++) {
+          if (ns !== null && ns.indexOf(c) < 0) continue;
+          var os = scoreName(ownerQ, ownerNames[c], cLow ? cLow[c] : null);
+          if (os > ob) ob = os;
+        }
+        if (ob) {
+          var mb = 0, mbi = 0;
+          for (var s = 0; s < 7; s++) {
+            if (ns !== null && ns.indexOf(SLOT_NS[s]) < 0) continue;
+            var ms = scoreName(memQ, names[s], lcRow ? lcRow[s] : null);
+            if (ms > mb) { mb = ms; mbi = s; }
+          }
+          if (mb) {
+            var combined = Math.min(ob, mb);
+            if (combined > best) { best = combined; bestI = mbi; }
+          }
+        }
+      }
+
       if (!best) continue;
       out.push({ ri: ri, row: row, score: best, bi: bestI });
       if (out.length >= MAX_HITS * 4) break;
@@ -326,10 +372,13 @@
 
   function renderList() {
     var q = state.q.trim().toLowerCase();
+    var hlQ = q;
+    var dot = q.lastIndexOf(".");
+    if (dot > 0 && dot < q.length - 1) hlQ = q.slice(dot + 1);
     if (!state.hits.length) {
       $list.innerHTML = state.q
-        ? '<div class="empty">没有匹配。<br>提示：默认不显示 &lt;init&gt; 构造函数；试试部分名，如 <b>player</b>。</div>'
-        : '<div class="empty">输入类名 / 方法名 / 字段名开始查询。<br><br>例如：<b>ClientPlayerEntity</b>、<b>AbstractClientPlayer</b>、<b>openScreen</b>、<b>lerpSteps</b></div>';
+        ? '<div class="empty">没有匹配。<br>提示：默认不显示 &lt;init&gt; 构造函数；试试部分名，如 <b>player</b>，或「类.成员」如 <b>ItemEntity.damage</b>。</div>'
+        : '<div class="empty">输入类名 / 方法名 / 字段名开始查询，也支持「类.成员」。<br><br>例如：<b>ClientPlayerEntity</b>、<b>openScreen</b>、<b>ItemEntity.damage</b></div>';
       return;
     }
     var html = [];
@@ -351,7 +400,7 @@
       html.push(
         '<div class="item' + (i === state.sel ? " on" : "") + '" data-i="' + i + '">' +
           '<div class="l1"><span class="badge ' + (row.k === 0 ? "c" : "") + '">' + badge + "</span>" +
-          '<span class="n1">' + hl(n1, q) + "</span></div>" +
+          '<span class="n1">' + hl(n1, hlQ) + "</span></div>" +
           '<div class="n2">' + esc(n2) + "</div>" +
         "</div>"
       );

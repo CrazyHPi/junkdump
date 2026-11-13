@@ -26,6 +26,11 @@ FORGE = "https://maven.minecraftforge.net/de/oceanlabs/mcp"
 
 DEFAULT_VERSIONS = ["1.12.2"]
 
+# 固定某些 build（不跟随 maven 最新），格式: {mc: {artifact: version}}
+PINNED_BUILDS = {
+    "1.12.2": {"feather": "1.12.2+build.28"},
+}
+
 
 def http_get(url, timeout=180):
     req = urllib.request.Request(url, headers={"User-Agent": "mapping-converter/1.0"})
@@ -150,13 +155,13 @@ def main(argv):
         cal2 = fetch_to(cal2_url, os.path.join(raw, "calamus-intermediary-gen2-%s-v2.jar" % mc))
 
         # ---------- feather (gen1 / gen2) ----------
-        f1_ver = latest_build(maven_versions("feather"), mc)
+        f1_ver = PINNED_BUILDS.get(mc, {}).get("feather") or latest_build(maven_versions("feather"), mc)
         f1 = None
         if f1_ver:
             f1_url = "%s/feather/%s/feather-%s-v2.jar" % (ORNITHE, f1_ver, f1_ver)
             f1 = fetch_to(f1_url, os.path.join(raw, "feather-gen1-%s-v2.jar" % f1_ver))
 
-        f2_ver = latest_build(maven_versions("feather-gen2"), mc)
+        f2_ver = PINNED_BUILDS.get(mc, {}).get("feather-gen2") or latest_build(maven_versions("feather-gen2"), mc)
         f2 = None
         if f2_ver:
             f2_url = "%s/feather-gen2/%s/feather-gen2-%s-v2.jar" % (ORNITHE, f2_ver, f2_ver)

@@ -21,7 +21,7 @@ mapping-converter/
 ├── raw/1.12.2/               ← 原始 jar/zip
 │   ├── calamus-intermediary-gen1-1.12.2-v2.jar
 │   ├── calamus-intermediary-gen2-1.12.2-v2.jar
-│   ├── feather-gen1-1.12.2+build.31-v2.jar
+│   ├── feather-gen1-1.12.2+build.28-v2.jar
 │   ├── feather-gen2-1.12.2+build.2-v2.jar
 │   ├── mcp-1.12.2-srg.zip
 │   └── mcp_stable-39-1.12.zip
@@ -50,7 +50,7 @@ mapping-converter/
 |---|---|---|---|
 | calamus gen1 | `net.ornithemc:calamus-intermediary:1.12.2:v2` | 239 KB | `official intermediary` |
 | calamus gen2 | `net.ornithemc:calamus-intermediary-gen2:1.12.2:v2` | 247 KB | `official intermediary` |
-| feather gen1 | `net.ornithemc:feather:1.12.2+build.31:v2` | 452 KB | `intermediary named` |
+| feather gen1 | `net.ornithemc:feather:1.12.2+build.28:v2` | 438 KB | `intermediary named` |
 | feather gen2 | `net.ornithemc:feather-gen2:1.12.2+build.2:v2` | 459 KB | `intermediary named` |
 | MCP SRG | `de.oceanlabs.mcp:mcp:1.12.2:srg@zip` | 654 KB | 纯文本 `joined.srg` |
 | MCP 名字 | `de.oceanlabs.mcp:mcp_stable:39-1.12@zip` | 379 KB | 3 个 CSV |
@@ -343,7 +343,7 @@ python convert.py 1.12.2   # 转换，产出 out/1.12.2/
 但要注意该版本的 MCP artifact 版本号（见坑 1）和 calamus/feather 是否发布了对应 build。
 
 `fetch.py` 的逻辑：
-1. 从 `maven.ornithemc.net` 拉 calamus gen1/gen2、feather gen1/gen2（feather 取 build 号最大的）
+1. 从 `maven.ornithemc.net` 拉 calamus gen1/gen2、feather gen1/gen2（feather 默认取 build 号最大的，可用 `PINNED_BUILDS` 固定某个 build）
 2. 从 `maven.minecraftforge.net` 拉 `mcp:<mc>:srg` 和 `mcp_stable` / `mcp_snapshot`
 3. 从每个 jar/zip 里抽出 `mappings/mappings.tiny` / `joined.srg` / `*.csv`
 
