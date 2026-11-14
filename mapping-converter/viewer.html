@@ -77,6 +77,7 @@
   }
   .chip.on { background: var(--chip-on); border-color: var(--chip-on); color: var(--chip-on-fg); }
   .sep { width: 1px; height: 16px; background: var(--line); margin: 0 4px; }
+  .chipgroup { display: flex; gap: 5px; align-items: center; margin-left: auto; padding-left: 10px; }
   main { flex: 1; display: flex; min-height: 0; }
   #listpane {
     width: 390px; flex: none; border-right: 1px solid var(--line);
@@ -167,6 +168,10 @@
     <span class="chip" data-kind="class">类</span>
     <span class="chip" data-kind="field">字段</span>
     <span class="chip" data-kind="method">方法</span>
+    <span class="chipgroup" id="feaToggles">
+      <span class="chip on" data-fea="1" title="显示 / 隐藏 gen1 的 intermediary 与 Feather 名字">gen1</span>
+      <span class="chip on" data-fea="2" title="显示 / 隐藏 gen2 的 intermediary 与 Feather 名字">gen2</span>
+    </span>
   </div>
 </header>
 <main>
@@ -207,7 +212,9 @@
     kind: null,
     hits: [],
     sel: -1,
-    view: null
+    view: null,
+    showG1: true,   // 详情面板里是否显示 gen1（intermediary + Feather）
+    showG2: true    // 详情面板里是否显示 gen2（intermediary + Feather）
   };
   var MAX_HITS = 300;
   var timings = {};
@@ -388,12 +395,13 @@
       var n1 = row.names[h.bi] || primaryName(row);
       var n2 = "";
       if (row.k === 0) {
-        var other = row.names[C_MCP] === n1 ? row.names[C_F2] : row.names[C_MCP];
+        var feaShown = state.showG2 ? row.names[C_F2] : state.showG1 ? row.names[C_F1] : "";
+        var other = row.names[C_MCP] === n1 ? feaShown : row.names[C_MCP];
         n2 = other || "";
       } else {
         var owner = DATA.classes[row.ci][0];
         var mcpC = owner[C_MCP] || owner[C_OBF];
-        var feaC = owner[C_F2] || owner[C_F1];
+        var feaC = (state.showG2 && owner[C_F2]) || (state.showG1 && owner[C_F1]) || "";
         var ownTxt = (mcpC && feaC && mcpC !== feaC) ? simple(mcpC) + " / " + simple(feaC) : (feaC || mcpC || "");
         n2 = ownTxt + (row.desc && row.k === 2 ? row.desc : "");
       }
@@ -438,7 +446,7 @@
     while ((m = re.exec(desc))) {
       out += esc(desc.slice(last, m.index));
       var obf = m[1];
-      var shown = obfToFeather2.get(obf) || obf;
+      var shown = (state.showG2 && obfToFeather2.get(obf)) || obf;
       out += '<span class="ty" data-obf="' + esc(obf) + '" title="' + esc(obf) + '">L' + esc(shown) + ";</span>";
       last = m.index + m[0].length;
     }
@@ -461,6 +469,8 @@
     var fields = DATA.classes[ci][1], methods = DATA.classes[ci][2];
     var html = ['<div class="card"><h2>类 · ' + esc(simple(names[C_MCP] || names[C_F2] || names[C_F1] || names[C_OBF])) + "</h2><table class=" + '"names">' + ""];
     for (var i = 0; i < NS.length; i++) {
+      if ((i === 2 || i === 3) && !state.showG1) continue;
+      if ((i === 4 || i === 5) && !state.showG2) continue;
       html.push(nameRow(NS_LABEL[NS[i]], names[i], true));
     }
     html.push("</table></div>");
@@ -474,7 +484,11 @@
 
   function memberTable(list, kind, title) {
     if (!list.length) return '<div class="empty" style="padding:12px 14px">没有' + title + "。</div>";
-    var html = ['<table class="mem"><thead><tr><th>' + title + "（MCP）</th><th>Feather gen1</th><th>Feather gen2</th><th>混淆名</th><th>描述符</th></tr></thead><tbody>"];
+    var th = ['<th>' + title + "（MCP）</th>"];
+    if (state.showG1) th.push("<th>inter gen1</th><th>Feather gen1</th>");
+    if (state.showG2) th.push("<th>inter gen2</th><th>Feather gen2</th>");
+    th.push("<th>混淆名</th><th>描述符</th>");
+    var html = ['<table class="mem"><thead><tr>' + th.join("") + "</tr></thead><tbody>"];
     for (var i = 0; i < list.length; i++) {
       var e = list[i];
       var mcp = e[M_NAMED] || e[M_SRG] || "";
@@ -482,15 +496,18 @@
         ? '<span class="link" data-q="' + esc(mcp) + '">' + esc(mcp) + "</span>" +
           (e[M_NAMED] && e[M_SRG] && e[M_NAMED] !== e[M_SRG] ? ' <span class="dash">[' + esc(e[M_SRG]) + "]</span>" : "")
         : '<span class="dash">—</span>';
-      html.push(
-        "<tr>" +
-          '<td class="m">' + mcpCell + "</td>" +
-          "<td>" + (e[M_F1] ? '<span class="link" data-q="' + esc(e[M_F1]) + '">' + esc(e[M_F1]) + "</span>" : '<span class="dash">—</span>') + "</td>" +
-          "<td>" + (e[M_F2] ? '<span class="link" data-q="' + esc(e[M_F2]) + '">' + esc(e[M_F2]) + "</span>" : '<span class="dash">—</span>') + "</td>" +
-          "<td>" + (e[M_OBF] ? esc(e[M_OBF]) : '<span class="dash">—</span>') + "</td>" +
-          '<td class="m">' + descHtml(e[M_DESC]) + "</td>" +
-        "</tr>"
-      );
+      var tds = ['<td class="m">' + mcpCell + "</td>"];
+      if (state.showG1) {
+        tds.push("<td>" + (e[M_I1] ? esc(e[M_I1]) : '<span class="dash">—</span>') + "</td>");
+        tds.push("<td>" + (e[M_F1] ? '<span class="link" data-q="' + esc(e[M_F1]) + '">' + esc(e[M_F1]) + "</span>" : '<span class="dash">—</span>') + "</td>");
+      }
+      if (state.showG2) {
+        tds.push("<td>" + (e[M_I2] ? esc(e[M_I2]) : '<span class="dash">—</span>') + "</td>");
+        tds.push("<td>" + (e[M_F2] ? '<span class="link" data-q="' + esc(e[M_F2]) + '">' + esc(e[M_F2]) + "</span>" : '<span class="dash">—</span>') + "</td>");
+      }
+      tds.push("<td>" + (e[M_OBF] ? esc(e[M_OBF]) : '<span class="dash">—</span>') + "</td>");
+      tds.push('<td class="m">' + descHtml(e[M_DESC]) + "</td>");
+      html.push("<tr>" + tds.join("") + "</tr>");
     }
     html.push("</tbody></table>");
     return html.join("");
@@ -503,7 +520,7 @@
     var title = (e[M_SRG] || e[M_OBF] || e[M_F2] || "?");
     var html = ['<div class="card"><h2>' + kindLabel + " · " + esc(title) + "</h2><table class=" + '"names">'];
     var mcpCls = owner[C_MCP] || owner[C_OBF];
-    var featherCls = owner[C_F2] || owner[C_F1];
+    var featherCls = (state.showG2 && owner[C_F2]) || (state.showG1 && owner[C_F1]) || "";
     function ownerLine(tag, val) {
       return '<div class="row"><span class="badge">' + esc(tag) + "</span>" +
         (val ? '<span class="link" data-class="' + row.ci + '">' + esc(val) + "</span>" : '<span class="dash">—</span>') +
@@ -513,15 +530,19 @@
     }
     html.push('<tr><td class="k">所属类</td><td class="v">' +
       ownerLine("MCP", mcpCls) +
-      ownerLine("Feather", featherCls) +
+      (featherCls ? ownerLine("Feather", featherCls) : "") +
       "</td></tr>");
     var mcp = e[M_NAMED] || e[M_SRG];
     var mcpText = mcp ? (e[M_NAMED] && e[M_SRG] && e[M_NAMED] !== e[M_SRG] ? e[M_NAMED] + "  [" + e[M_SRG] + "]" : mcp) : "";
     html.push(nameRow(NS_LABEL.mcp, mcpText, false));
-    html.push(nameRow(NS_LABEL.feather1, e[M_F1], true));
-    html.push(nameRow(NS_LABEL.feather2, e[M_F2], true));
-    html.push(nameRow(NS_LABEL.inter1, e[M_I1], false));
-    html.push(nameRow(NS_LABEL.inter2, e[M_I2], false));
+    if (state.showG1) {
+      html.push(nameRow(NS_LABEL.inter1, e[M_I1], false));
+      html.push(nameRow(NS_LABEL.feather1, e[M_F1], true));
+    }
+    if (state.showG2) {
+      html.push(nameRow(NS_LABEL.inter2, e[M_I2], false));
+      html.push(nameRow(NS_LABEL.feather2, e[M_F2], true));
+    }
     html.push(nameRow(NS_LABEL.obf, e[M_OBF], false));
     if (row.k === 2) {
       html.push('<tr><td class="k">描述符</td><td class="v">' + descHtml(e[M_DESC]) + "</td></tr>");
@@ -530,11 +551,20 @@
     $detail.innerHTML = html.join("");
   }
 
+  function renderDetail() {
+    var h = state.hits[state.sel];
+    if (!h) {
+      $detail.innerHTML = "";
+      return;
+    }
+    if (h.row.k === 0) renderClass(h.row.ci); else renderMember(h.row);
+  }
+
   function showRow(i) {
     state.sel = i;
     var h = state.hits[i];
     if (!h) return;
-    if (h.row.k === 0) renderClass(h.row.ci); else renderMember(h.row);
+    renderDetail();
     var items = $list.querySelectorAll(".item");
     for (var k = 0; k < items.length; k++) items[k].classList.toggle("on", +items[k].dataset.i === i);
     if (items[i] && items[i].scrollIntoView) items[i].scrollIntoView({ block: "nearest" });
@@ -620,6 +650,14 @@
     nsChips.addEventListener("click", function (ev) {
       var el = ev.target.closest(".chip");
       if (!el) return;
+      if (el.dataset.fea !== undefined) {
+        var key = el.dataset.fea === "1" ? "showG1" : "showG2";
+        state[key] = !state[key];
+        el.classList.toggle("on", state[key]);
+        renderDetail();
+        renderList();
+        return;
+      }
       var group = el.dataset.ns !== undefined ? "ns" : "kind";
       var v = group === "ns" ? el.dataset.ns : el.dataset.kind;
       var siblings = nsChips.querySelectorAll(".chip[" + (group === "ns" ? "data-ns" : "data-kind") + "]");
