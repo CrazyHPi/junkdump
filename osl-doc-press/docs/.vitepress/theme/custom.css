@@ -1,0 +1,22 @@
+/* API 表格偏宽：正文容器放宽一点，窄屏仍可横向滚动 */
+@media (min-width: 1280px) {
+  .VPDoc .content-container {
+    max-width: 880px !important;
+  }
+}
+
+.vp-doc table {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+}
+
+.vp-doc th,
+.vp-doc td {
+  vertical-align: top;
+}
+
+/* 单元格内的行内代码在表格里不要撑开 */
+.vp-doc table code {
+  white-space: nowrap;
+}
