@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "osl-doc-press",
+  "compatibility_date": "2025-01-01",
+  // 纯静态资源 Worker：上传 docs/.vitepress/dist，不需要 main 入口
+  "assets": {
+    "directory": "./docs/.vitepress/dist",
+    // /guide/intro 自动命中 guide/intro.html（配合 VitePress 的 cleanUrls）
+    "html_handling": "auto-trailing-slash",
+    // 未命中时返回 VitePress 生成的 404.html
+    "not_found_handling": "404-page"
+  }
+}

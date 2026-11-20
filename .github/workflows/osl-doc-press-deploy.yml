@@ -1,0 +1,46 @@
+name: osl-doc-press deploy
+
+# 只在 osl-doc-press/ 有改动时构建并部署到 Cloudflare Workers（*.workers.dev）
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'osl-doc-press/**'
+      - '.github/workflows/osl-doc-press-deploy.yml'
+  workflow_dispatch:
+
+# 同一时间只跑一个部署，新的推送顶掉正在跑的那个
+concurrency:
+  group: osl-doc-press-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: osl-doc-press
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: osl-doc-press/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build site
+        run: npm run build
+
+      - name: Deploy to Cloudflare Workers
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_AK }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ID }}
+        # wrangler 读 osl-doc-press/wrangler.jsonc 里的 assets 配置直接上传 dist
+        run: npx --yes wrangler@4 deploy
