@@ -1,5 +1,9 @@
 # osl-doc-press
 
+https://osl.crazyh.fun
+
+https://osl-doc.crazyhpi.workers.dev/
+
 OSL（Minecraft 1.12.2）API 参考文档的 VitePress 站点。内容来自 `../_osl_doc/` 的各章分册（22 个模块章 + 2 个附录）。
 
 ## 目录结构
@@ -33,8 +37,12 @@ npm run preview:dist                                # 零依赖预览已构建�
 
 ## 部署
 
+自动：推送到 `main` 且改动落在 `osl-doc-press/` 下时，`.github/workflows/osl-doc-press-deploy.yml` 会 `npm ci` → `npm run build` → `wrangler deploy`，以 Workers 静态资源的形式发布到 `https://osl-doc-press.<子域>.workers.dev`。也可以在 Actions 页面手动 `workflow_dispatch` 触发。
+
+手动方式：
+
 1. `npm run build` 生成静态站点。
-2. 把 `docs/.vitepress/dist/` 整个目录上传到静态主机（GitHub Pages / Nginx / Cloudflare Pages 均可）。
+2. 把 `docs/.vitepress/dist/` 整个目录上传到静态主机（Cloudflare Workers / Pages、Nginx 均可）。
 3. 若部署在子路径（如 `https://example.com/osl-doc/`），把 `docs/.vitepress/config.mts` 里的 `base` 改成 `'/osl-doc/'` 后重新构建。
 
 ## 内容维护

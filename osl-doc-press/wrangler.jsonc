@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "osl-doc-press",
+  "name": "osl-doc",
   "compatibility_date": "2025-01-01",
   // 纯静态资源 Worker：上传 docs/.vitepress/dist，不需要 main 入口
   "assets": {
