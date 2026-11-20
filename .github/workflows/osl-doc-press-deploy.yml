@@ -26,9 +26,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # wrangler 4.166 要求 Node >= 22.12；用 Node 20 时 npx 会按 engines 自动退回老版本
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: osl-doc-press/package-lock.json
 
@@ -42,5 +43,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_AK }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ID }}
-        # wrangler 读 osl-doc-press/wrangler.jsonc 里的 assets 配置直接上传 dist
-        run: npx --yes wrangler@4 deploy
+        # 钉版本：4.166 起部署不再读账户级 workers.dev 子域，细粒度 token 也能拿到地址
+        # （旧版会在这个 GET 上返回 10000，即使资源已经上传成功）
+        # 升级时确认 changelog 里仍保留该行为，并同步 README 的说明
+        run: npx --yes wrangler@4.166.0 deploy

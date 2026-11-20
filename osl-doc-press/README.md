@@ -37,7 +37,11 @@ npm run preview:dist                                # 零依赖预览已构建�
 
 ## 部署
 
-自动：推送到 `main` 且改动落在 `osl-doc-press/` 下时，`.github/workflows/osl-doc-press-deploy.yml` 会 `npm ci` → `npm run build` → `wrangler deploy`，以 Workers 静态资源的形式发布到 `https://osl-doc-press.<子域>.workers.dev`。也可以在 Actions 页面手动 `workflow_dispatch` 触发。
+自动：推送到 `main` 且改动落在 `osl-doc-press/` 下时，`.github/workflows/osl-doc-press-deploy.yml` 会 `npm ci` → `npm run build` → `wrangler deploy`，以 Workers 静态资源的形式发布到 `https://osl-doc.<子域>.workers.dev`（Worker 名见 `wrangler.jsonc`）。也可以在 Actions 页面手动 `workflow_dispatch` 触发。
+
+仓库需要的两个 secrets：`CF_ID`（Cloudflare Account ID）和 `CF_AK`（API Token，权限至少 Workers Scripts 编辑）。CI 只认 API Token，本地的 `wrangler login` 登录态不会被用到，所以别用 Global API Key。
+
+关于 token 权限：`workers.dev` 子域那个接口要求账户级 Workers Scripts 权限。若 token 被限制成「只授权某几个 Worker」的细粒度 token，旧版 wrangler 会在资源上传成功后仍报 `Authentication error [code: 10000]`（请求路径含 `/accounts/<id>/workers/subdomain`）。workflow 把 wrangler 钉在 `4.166.0`、Node 用 22 就是为了避开这一步（4.166 起部署直接从 Worker 资源读地址；Node 20 下 `npx` 会按 `engines` 自动退回老版本）。日志末尾的 `/memberships ... [code: 9106]` 是 Account Token 的正常现象，不影响部署。将来新建 Worker 时若仍撞上 10000，把 token 的 Workers Scripts 权限放宽到账户级。
 
 手动方式：
 
